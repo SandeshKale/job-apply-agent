@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server';
 import { loadRunState, saveRunState } from '@/lib/storage';
+import { getErrorMessage } from '@/lib/utils';
 import type { RunState } from '@/types';
 
 export async function GET() {
-  const state = await loadRunState();
-  return NextResponse.json(state);
+  try {
+    const state = await loadRunState();
+    return NextResponse.json(state);
+  } catch (err) {
+    return NextResponse.json(
+      { error: getErrorMessage(err, 'Failed to load run state') },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PUT(request: Request) {
@@ -15,9 +23,6 @@ export async function PUT(request: Request) {
     await saveRunState(next);
     return NextResponse.json(next);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: getErrorMessage(err, 'Failed') }, { status: 500 });
   }
 }

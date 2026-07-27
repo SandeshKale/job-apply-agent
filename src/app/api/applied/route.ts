@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server';
 import { loadApplied, saveApplied, appendApplied, pruneApplied } from '@/lib/storage';
+import { getErrorMessage } from '@/lib/utils';
 import type { AppliedRecord } from '@/types';
 
 export async function GET() {
-  const records = await loadApplied();
-  // newest first
-  records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  return NextResponse.json(records);
+  try {
+    const records = await loadApplied();
+    // newest first
+    records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return NextResponse.json(records);
+  } catch (err) {
+    return NextResponse.json(
+      { error: getErrorMessage(err, 'Failed to load applied history') },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -18,19 +26,30 @@ export async function POST(request: Request) {
     await appendApplied(body);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    return NextResponse.json({ error: getErrorMessage(err, 'Failed') }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    await saveApplied([]);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed' },
+      { error: getErrorMessage(err, 'Failed to clear history') },
       { status: 500 },
     );
   }
 }
 
-export async function DELETE() {
-  await saveApplied([]);
-  return NextResponse.json({ ok: true });
-}
-
 export async function PATCH() {
-  const removed = await pruneApplied(90);
-  return NextResponse.json({ removed });
+  try {
+    const removed = await pruneApplied(90);
+    return NextResponse.json({ removed });
+  } catch (err) {
+    return NextResponse.json(
+      { error: getErrorMessage(err, 'Failed to prune history') },
+      { status: 500 },
+    );
+  }
 }

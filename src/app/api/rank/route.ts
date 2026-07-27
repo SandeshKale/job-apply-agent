@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { loadConfig, loadApplied } from '@/lib/storage';
 import { rankAndSelect } from '@/lib/ranking';
+import { getErrorMessage } from '@/lib/utils';
 import type { JobCandidate } from '@/types';
 
 /**
@@ -21,9 +22,6 @@ export async function POST(request: Request) {
       selectedCount: selected.length,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Ranking failed' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: getErrorMessage(err, 'Ranking failed') }, { status: 500 });
   }
 }

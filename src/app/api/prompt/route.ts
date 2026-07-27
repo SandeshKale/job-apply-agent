@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { loadConfig, loadApplied } from '@/lib/storage';
 import { buildAgentTaskPrompt, buildRankingOnlyPrompt } from '@/lib/prompt-builder';
+import { getErrorMessage } from '@/lib/utils';
 import type { ScoredJob } from '@/types';
 
 export async function POST(request: Request) {
@@ -18,9 +19,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ prompt, mode });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: getErrorMessage(err, 'Failed') }, { status: 500 });
   }
 }

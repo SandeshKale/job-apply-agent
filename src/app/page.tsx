@@ -23,14 +23,23 @@ export default function DashboardPage() {
   const [candidateJson, setCandidateJson] = useState('');
   const [rankingMsg, setRankingMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [cRes, aRes] = await Promise.all([fetch('/api/config'), fetch('/api/applied')]);
-    const c = await cRes.json();
-    const a = await aRes.json();
-    setConfig(c);
-    setApplied(a);
-    setLoading(false);
+    try {
+      const [cRes, aRes] = await Promise.all([fetch('/api/config'), fetch('/api/applied')]);
+      const c = await cRes.json();
+      const a = await aRes.json();
+      if (!cRes.ok) throw new Error(c?.error ?? 'Failed to load config');
+      if (!aRes.ok) throw new Error(a?.error ?? 'Failed to load applied history');
+      setConfig(c);
+      setApplied(a);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -95,10 +104,29 @@ export default function DashboardPage() {
     );
   }).length;
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-400">
         Loading dashboard…
+      </div>
+    );
+  }
+
+  if (loadError || !config) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-sm font-semibold text-rose-300">Failed to load dashboard</p>
+        <p className="max-w-md text-xs text-slate-400">{loadError ?? 'Unknown error'}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            refresh();
+          }}
+          className="mt-2 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white"
+        >
+          Retry
+        </button>
       </div>
     );
   }
