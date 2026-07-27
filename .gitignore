@@ -1,0 +1,41 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build
+.next
+out
+dist
+build
+coverage
+
+# env
+.env
+.env.local
+.env.*.local
+
+# data (user-specific)
+data/config.json
+data/applied.json
+data/run-state.json
+data/*.pdf
+data/*.docx
+
+# python
+python/.venv
+python/__pycache__
+*.pyc
+
+# ide / os
+.DS_Store
+.idea
+.vscode
+*.log
+*.swp
+
+# test
+.turbo
+
+# typescript
+*.tsbuildinfo
