@@ -1,76 +1,96 @@
-import fs from 'fs/promises';
-import path from 'path';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AppliedRecord, UserConfig, RunState } from '@/types';
 import { SANDESH_DEFAULT_CONFIG } from './default-config';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
-const APPLIED_PATH = path.join(DATA_DIR, 'applied.json');
-const RUN_STATE_PATH = path.join(DATA_DIR, 'run-state.json');
+const CONFIG_ID = 'default';
+const RUN_STATE_ID = 'default';
 
-async function ensureDataDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+let client: SupabaseClient | null = null;
+
+function getClient(): SupabaseClient {
+  if (client) return client;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  }
+  client = createClient(url, key, { auth: { persistSession: false } });
+  return client;
 }
 
 export async function loadConfig(): Promise<UserConfig> {
-  await ensureDataDir();
-  try {
-    const raw = await fs.readFile(CONFIG_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<UserConfig>;
-    return { ...SANDESH_DEFAULT_CONFIG, ...parsed };
-  } catch {
+  const { data, error } = await getClient()
+    .from('job_apply_config')
+    .select('data')
+    .eq('id', CONFIG_ID)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
     await saveConfig(SANDESH_DEFAULT_CONFIG);
     return { ...SANDESH_DEFAULT_CONFIG };
   }
+  return { ...SANDESH_DEFAULT_CONFIG, ...(data.data as Partial<UserConfig>) };
 }
 
 export async function saveConfig(config: UserConfig): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+  const { error } = await getClient()
+    .from('job_apply_config')
+    .upsert({ id: CONFIG_ID, data: config, updated_at: new Date().toISOString() });
+  if (error) throw error;
 }
 
 export async function loadApplied(): Promise<AppliedRecord[]> {
-  await ensureDataDir();
-  try {
-    const raw = await fs.readFile(APPLIED_PATH, 'utf-8');
-    return JSON.parse(raw) as AppliedRecord[];
-  } catch {
-    return [];
-  }
+  const { data, error } = await getClient()
+    .from('job_apply_applied')
+    .select('id, platform, title, company, url, timestamp, status, reason, score')
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as AppliedRecord[];
 }
 
 export async function saveApplied(records: AppliedRecord[]): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(APPLIED_PATH, JSON.stringify(records, null, 2), 'utf-8');
-}
-
-export async function appendApplied(record: AppliedRecord): Promise<void> {
-  const all = await loadApplied();
-  all.push(record);
-  await saveApplied(all);
-}
-
-export async function loadRunState(): Promise<RunState> {
-  await ensureDataDir();
-  try {
-    const raw = await fs.readFile(RUN_STATE_PATH, 'utf-8');
-    return JSON.parse(raw) as RunState;
-  } catch {
-    return { status: 'idle', selectedJobs: [], applied: [], logs: [] };
+  const { error: deleteError } = await getClient()
+    .from('job_apply_applied')
+    .delete()
+    .not('id', 'is', null);
+  if (deleteError) throw deleteError;
+  if (records.length > 0) {
+    const { error } = await getClient().from('job_apply_applied').insert(records);
+    if (error) throw error;
   }
 }
 
+export async function appendApplied(record: AppliedRecord): Promise<void> {
+  const { error } = await getClient().from('job_apply_applied').upsert(record);
+  if (error) throw error;
+}
+
+export async function loadRunState(): Promise<RunState> {
+  const { data, error } = await getClient()
+    .from('job_apply_run_state')
+    .select('data')
+    .eq('id', RUN_STATE_ID)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { status: 'idle', selectedJobs: [], applied: [], logs: [] };
+  return data.data as RunState;
+}
+
 export async function saveRunState(state: RunState): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(RUN_STATE_PATH, JSON.stringify(state, null, 2), 'utf-8');
+  const { error } = await getClient()
+    .from('job_apply_run_state')
+    .upsert({ id: RUN_STATE_ID, data: state, updated_at: new Date().toISOString() });
+  if (error) throw error;
 }
 
 /** Keep only last 90 days of applied records to avoid unbounded growth. */
 export async function pruneApplied(days = 90): Promise<number> {
-  const all = await loadApplied();
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const kept = all.filter((r) => new Date(r.timestamp).getTime() >= cutoff);
-  const removed = all.length - kept.length;
-  if (removed > 0) await saveApplied(kept);
-  return removed;
+  const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await getClient()
+    .from('job_apply_applied')
+    .delete()
+    .lt('timestamp', cutoffIso)
+    .select('id');
+  if (error) throw error;
+  return data?.length ?? 0;
 }
